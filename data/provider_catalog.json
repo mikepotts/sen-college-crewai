@@ -1,0 +1,142 @@
+[
+  {
+    "provider_id": "leeds_city_college_printworks",
+    "name": "Leeds City College (Printworks)",
+    "postcode": "LS10 1JY",
+    "residential": false,
+    "s41": false,
+    "notes": "Catering & Hospitality at Printworks; SEND support incl EHCP; open events and quieter open events.",
+    "tags": [
+      "catering",
+      "hospitality",
+      "EHCP",
+      "SEND",
+      "quieter open event"
+    ],
+    "links": {
+      "Catering & Hospitality": "https://leedscitycollege.ac.uk/subject-areas/catering-hospitality/",
+      "SEND Support": "https://leedscitycollege.ac.uk/student-life/send/",
+      "Open Events": "https://leedscitycollege.ac.uk/open-events/",
+      "Events": "https://leedscitycollege.ac.uk/events/"
+    }
+  },
+  {
+    "provider_id": "kirklees_college_huddersfield",
+    "name": "Kirklees College (Huddersfield)",
+    "postcode": "HD1 3LD",
+    "residential": false,
+    "s41": false,
+    "notes": "Hospitality & Catering with commercial restaurant; Inclusive Learning supports SEND/EHCP; open days published.",
+    "tags": [
+      "hospitality",
+      "catering",
+      "restaurant",
+      "Inclusive Learning",
+      "EHCP",
+      "SEND"
+    ],
+    "links": {
+      "Hospitality & Catering": "https://www.kirkleescollege.ac.uk/subjects/hospitality-and-catering/",
+      "Inclusive Learning": "https://www.kirkleescollege.ac.uk/inclusive-learning/",
+      "Open Days": "https://www.kirkleescollege.ac.uk/open-days/2/"
+    }
+  },
+  {
+    "provider_id": "bradford_college",
+    "name": "Bradford College",
+    "postcode": "BD7 1AY",
+    "residential": false,
+    "s41": false,
+    "notes": "Catering & Hospitality with The Grove training restaurant; Disability Services supports EHCP learners.",
+    "tags": [
+      "catering",
+      "hospitality",
+      "training restaurant",
+      "EHCP",
+      "disability services"
+    ],
+    "links": {
+      "Catering & Hospitality": "https://www.bradfordcollege.ac.uk/subject-areas/catering-hospitality/",
+      "Disability Services": "https://www.bradfordcollege.ac.uk/support/parents-carers-schools/send-als/"
+    }
+  },
+  {
+    "provider_id": "wakefield_college",
+    "name": "Wakefield College",
+    "postcode": "WF1 2DH",
+    "residential": false,
+    "s41": false,
+    "notes": "Hospitality & Catering with award-winning training restaurant; Foundation Learning supports SEND.",
+    "tags": [
+      "hospitality",
+      "catering",
+      "training restaurant",
+      "foundation learning",
+      "SEND"
+    ],
+    "links": {
+      "Hospitality & Catering": "https://www.heartofyorkshire.ac.uk/course-search/wakefield-college/hospitality-catering",
+      "Foundation Learning": "https://www.heartofyorkshire.ac.uk/course-search/wakefield-college/foundation-learning"
+    }
+  },
+  {
+    "provider_id": "calderdale_college",
+    "name": "Calderdale College",
+    "postcode": "HX1 3UZ",
+    "residential": false,
+    "s41": false,
+    "notes": "Catering & Hospitality with on-campus training kitchen; Inclusive Learning supports EHCP/SEND.",
+    "tags": [
+      "catering",
+      "hospitality",
+      "training kitchen",
+      "inclusive learning",
+      "EHCP",
+      "SEND"
+    ],
+    "links": {
+      "Catering & Hospitality": "https://www.calderdale.ac.uk/departments/catering-hospitality/",
+      "Inclusive Learning": "https://www.calderdale.ac.uk/student-life/inclusive-learning/"
+    }
+  },
+  {
+    "provider_id": "york_college",
+    "name": "York College & University Centre",
+    "postcode": "YO23 2BB",
+    "residential": false,
+    "s41": false,
+    "notes": "Hospitality with training kitchens and on-site restaurant; Learning Support includes EHCP support.",
+    "tags": [
+      "hospitality",
+      "catering",
+      "training restaurant",
+      "EHCP",
+      "learning support"
+    ],
+    "links": {
+      "Hospitality": "https://www.yorkcollege.ac.uk/study/curriculum-areas/hospitality",
+      "Learning Support": "https://www.yorkcollege.ac.uk/student-life/student-support/learning-support",
+      "Events": "https://www.yorkcollege.ac.uk/events-and-news/events"
+    }
+  },
+  {
+    "provider_id": "barnsley_college",
+    "name": "Barnsley College",
+    "postcode": "S70 2AX",
+    "residential": false,
+    "s41": false,
+    "notes": "Catering & Hospitality with commercial training restaurant; ALS supports EHCP and ADHD/ASC.",
+    "tags": [
+      "catering",
+      "hospitality",
+      "ALS",
+      "EHCP",
+      "ADHD",
+      "autism"
+    ],
+    "links": {
+      "Catering & Hospitality": "https://www.barnsley.ac.uk/catering-and-hospitality",
+      "Additional Learning Support": "https://www.barnsley.ac.uk/student-support/additional-learning-support"
+    }
+  }
+]
