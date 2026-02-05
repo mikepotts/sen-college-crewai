@@ -8,8 +8,7 @@ about a child's needs, diagnoses, aspirations, and preferences.
 import os
 import logging
 from typing import Dict, Any, List, Optional
-from crewai import Agent, Task, Crew, Process
-from langchain_openai import ChatOpenAI
+from crewai import Agent, Task, Crew, Process, LLM
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +38,11 @@ def extract_profile_from_prompt(prompt: str) -> Optional[Dict[str, Any]]:
         return None
     
     try:
-        # Initialize the LLM
-        llm = ChatOpenAI(
-            model=model_name,
-            temperature=0.3,
-            api_key=api_key
+        # Initialize the LLM using CrewAI's LLM class
+        llm = LLM(
+            model=f"openai/{model_name}",
+            api_key=api_key,
+            temperature=0.3
         )
         
         # Define the extraction agent
