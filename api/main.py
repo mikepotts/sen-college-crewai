@@ -25,6 +25,13 @@ from tools.scoring import blended_score, HOSPITALITY_KEYWORDS, SEND_KEYWORDS, ke
 from tools.provider_repository import fetch_nearby_providers  # DB-backed
 from datetime import datetime, timezone
 
+# Constants
+MAX_PROMPT_LOG_LENGTH = 100
+DEFAULT_WHY_IT_MATCHES = [
+    "Distance and basic suitability weighting applied.",
+    "Full SEND/course detail appears in Deep Dive."
+]
+
 
 
 app = FastAPI(title="SEN College Finder API", version="0.1.0")
@@ -102,7 +109,7 @@ def instant(
     "residential_mode": residential_mode,
     "national_for_residential": national_for_residential,
     "target_count": target_count,
-    "prompt": prompt[:100] if prompt else None  # truncate for logging
+    "prompt": prompt[:MAX_PROMPT_LOG_LENGTH] if prompt else None
     })
     """
     DB-backed /instant:
@@ -257,10 +264,7 @@ def instant(
         
         # Generate profile-based quick_summary and why_it_matches if profile exists
         quick_summary = ""
-        why_it_matches = [
-            "Distance and basic suitability weighting applied.",
-            "Full SEND/course detail appears in Deep Dive."
-        ]
+        why_it_matches = list(DEFAULT_WHY_IT_MATCHES)  # Copy default messages
         
         if extracted_profile:
             # Generate a personalized summary

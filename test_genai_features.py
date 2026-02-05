@@ -22,19 +22,25 @@ def test_profile_extraction():
     
     from tools.profile_extractor import extract_profile_from_prompt
     
-    # Remove API key for testing graceful degradation
-    os.environ.pop('OPENAI_API_KEY', None)
-    
-    test_prompt = "My child has ADHD and autism, needs quiet spaces and visual schedules, interested in hospitality and catering"
-    
-    profile = extract_profile_from_prompt(test_prompt)
-    
-    if profile is None:
-        print("✓ Profile extraction correctly returns None when API key is not available")
-    else:
-        print("✗ Expected None but got:", profile)
-    
-    print("Status: PASS - Graceful degradation working\n")
+    # Save and remove API key for testing graceful degradation
+    original_api_key = os.environ.get('OPENAI_API_KEY')
+    try:
+        os.environ.pop('OPENAI_API_KEY', None)
+        
+        test_prompt = "My child has ADHD and autism, needs quiet spaces and visual schedules, interested in hospitality and catering"
+        
+        profile = extract_profile_from_prompt(test_prompt)
+        
+        if profile is None:
+            print("✓ Profile extraction correctly returns None when API key is not available")
+        else:
+            print("✗ Expected None but got:", profile)
+        
+        print("Status: PASS - Graceful degradation working\n")
+    finally:
+        # Restore original API key
+        if original_api_key is not None:
+            os.environ['OPENAI_API_KEY'] = original_api_key
 
 
 def test_provider_repository():
