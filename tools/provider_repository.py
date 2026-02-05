@@ -36,3 +36,28 @@ def fetch_by_ids(ids: List[str]) -> Dict[str,Dict[str,Any]]:
     conn.close()
     cols = ["provider_id","name","postcode","lat","lon","is_residential","s41_approved","website"]
     return {r[0]: dict(zip(cols,r)) for r in rows}
+
+def fetch_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch a single provider by ID from the SQLite database.
+    
+    Args:
+        provider_id: The provider's unique identifier
+        
+    Returns:
+        Dictionary with provider details or None if not found
+    """
+    conn = get_conn()
+    c = conn.cursor()
+    row = c.execute(
+        "SELECT provider_id, name, postcode, lat, lon, is_residential, s41_approved, website "
+        "FROM providers WHERE provider_id = ?",
+        (provider_id,)
+    ).fetchone()
+    conn.close()
+    
+    if not row:
+        return None
+    
+    cols = ["provider_id", "name", "postcode", "lat", "lon", "is_residential", "s41_approved", "website"]
+    return dict(zip(cols, row))

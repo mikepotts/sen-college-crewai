@@ -25,6 +25,13 @@ from tools.scoring import blended_score, HOSPITALITY_KEYWORDS, SEND_KEYWORDS, ke
 from tools.provider_repository import fetch_nearby_providers  # DB-backed
 from datetime import datetime, timezone
 
+# Constants
+MAX_PROMPT_LOG_LENGTH = 100
+DEFAULT_WHY_IT_MATCHES = [
+    "Distance and basic suitability weighting applied.",
+    "Full SEND/course detail appears in Deep Dive."
+]
+
 
 
 app = FastAPI(title="SEN College Finder API", version="0.1.0")
@@ -89,6 +96,9 @@ def instant(
     w_send: float = Query(0.40, ge=0.0, le=1.0),
     w_asp: float  = Query(0.35, ge=0.0, le=1.0),
     w_dist: float = Query(0.25, ge=0.0, le=1.0),
+    
+    # NEW: GenAI prompt-based search
+    prompt: Optional[str] = Query(None, description="Natural language description of child needs, diagnoses, and aspirations"),
 ):
     print("DEBUG /instant params:", {
     "postcode": postcode,
@@ -98,7 +108,8 @@ def instant(
     "max_radius_miles": max_radius_miles,
     "residential_mode": residential_mode,
     "national_for_residential": national_for_residential,
-    "target_count": target_count
+    "target_count": target_count,
+    "prompt": prompt[:MAX_PROMPT_LOG_LENGTH] if prompt else None
     })
     """
     DB-backed /instant:
@@ -109,8 +120,17 @@ def instant(
     - residential_mode: 'exclude' | 'include' | 'only'
     - national_for_residential: when True and residential_mode != 'exclude', returns residential providers nationally
       (i.e., not restricted by the local radius), ranked primarily by distance (if available) + placeholder scores.
+    - prompt: optional natural language description for GenAI-enhanced search
     """
-    # ----- 0) set up config / scoring
+    # ----- 0) Extract profile from prompt if provided
+    extracted_profile = None
+    if prompt:
+        from tools.profile_extractor import extract_profile_from_prompt
+        extracted_profile = extract_profile_from_prompt(prompt)
+        if extracted_profile:
+            print("DEBUG: Extracted profile:", extracted_profile)
+    
+    # ----- 1) set up config / scoring
     cfg = RunConfig()
     cfg.scoring = ScoringConfig(w_distance=w_dist, w_aspiration=w_asp, w_send_fit=w_send)
 
@@ -161,11 +181,21 @@ def instant(
 
     # ----- 4) scoring (simple: keywords are not available yet for DB rows, use placeholders)
     # We can improve when you add tags/notes; for now, aspiration/SEND hits = 0 (or you can infer from name/type).
+    # If profile was extracted from prompt, use it to enhance scoring
     def score_row(r: Dict[str, Any]) -> Dict[str, Any]:
-        # Placeholder: use minimal text basis; you can extend with provider_type/name rules
-        text = " "  # no strong signals yet; keep 0 hits to avoid bias
-        a_hits = keyword_hits(text, HOSPITALITY_KEYWORDS)
-        s_hits = keyword_hits(text, SEND_KEYWORDS)
+        # Build text from available fields for keyword matching
+        text_parts = [r.get("name", ""), r.get("provider_type", "")]
+        text = " ".join(filter(None, text_parts))
+        
+        # Use extracted profile for enhanced scoring if available
+        if extracted_profile and extracted_profile.get("keywords"):
+            from tools.profile_extractor import enhance_scoring_with_profile
+            a_hits, s_hits = enhance_scoring_with_profile(extracted_profile, text)
+        else:
+            # Fallback to default keyword matching (currently minimal)
+            a_hits = keyword_hits(text, HOSPITALITY_KEYWORDS)
+            s_hits = keyword_hits(text, SEND_KEYWORDS)
+        
         score, d_comp, a_comp, s_comp = blended_score(
             r["distance_miles"], max(used_radius, 0.01), a_hits, s_hits, cfg.scoring
         )
@@ -231,6 +261,37 @@ def instant(
             badges.insert(0, "Local")
         else:
             badges.insert(0, "Residential")
+        
+        # Generate profile-based quick_summary and why_it_matches if profile exists
+        quick_summary = ""
+        why_it_matches = list(DEFAULT_WHY_IT_MATCHES)  # Copy default messages
+        
+        if extracted_profile:
+            # Generate a personalized summary
+            profile_parts = []
+            if extracted_profile.get("aspirations"):
+                profile_parts.append(f"Interests: {', '.join(extracted_profile['aspirations'][:3])}")
+            if extracted_profile.get("diagnoses"):
+                profile_parts.append(f"Support for: {', '.join(extracted_profile['diagnoses'][:2])}")
+            if profile_parts:
+                quick_summary = f"{row['name']} - {' | '.join(profile_parts)}"
+            
+            # Generate personalized matching reasons
+            why_it_matches = []
+            if row.get("distance_miles"):
+                why_it_matches.append(f"Located {row['distance_miles']} miles from your postcode")
+            
+            # Add aspiration matches
+            if extracted_profile.get("aspirations"):
+                asp_text = ", ".join(extracted_profile["aspirations"][:2])
+                why_it_matches.append(f"May offer courses related to: {asp_text}")
+            
+            # Add SEND support match
+            if extracted_profile.get("needs") or extracted_profile.get("diagnoses"):
+                why_it_matches.append("Provider has SEND support capabilities")
+            
+            if row.get("s41_approved"):
+                why_it_matches.append("Section 41 approved for SEND provision")
 
         return {
             "provider": {
@@ -245,11 +306,8 @@ def instant(
             "distance_miles": row.get("distance_miles"),
             "score": row.get("score"),
             "score_breakdown": row.get("score_breakdown"),
-            "quick_summary": "",  # can be enriched later
-            "why_it_matches": [
-                "Distance and basic suitability weighting applied.",
-                "Full SEND/course detail appears in Deep Dive."
-            ],
+            "quick_summary": quick_summary,
+            "why_it_matches": why_it_matches,
             "key_links": key_links,
             "who_to_contact": who,
             "open_days_hint": {
@@ -268,7 +326,8 @@ def instant(
             "weights": {"send": w_send, "aspiration": w_asp, "distance": w_dist},
             "residential_mode": residential_mode,
             "national_for_residential": national_for_residential,
-            "generated_at": datetime.now(timezone.utc).isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "extracted_profile": extracted_profile if extracted_profile else None  # Include for transparency
         },
         "local_non_residential": {
             "user_postcode": user_pc,
@@ -296,8 +355,21 @@ def instant(
 
 @app.post("/deep-dive")
 def deep_dive(payload: DeepDiveIn = Body(...)):
-    catalog = {p["provider_id"]: p for p in load_catalog()}
-    provider = catalog.get(payload.provider_id)
+    """
+    Perform a deep dive on a specific provider using SQLite database.
+    
+    Fetches provider details from the database and runs deep dive analysis
+    using the provider's website as the primary source.
+    """
+    from tools.provider_repository import fetch_by_id
+    
+    provider = fetch_by_id(payload.provider_id)
     if not provider:
-        return {"error": f"Unknown provider_id: {payload.provider_id}"}
-    return run_deep_dive(payload.provider_id, provider.get("links", {}))
+        raise HTTPException(status_code=404, detail=f"Provider not found: {payload.provider_id}")
+    
+    # Use provider website as primary link for deep dive
+    links = {}
+    if provider.get("website"):
+        links["Website"] = provider["website"]
+    
+    return run_deep_dive(payload.provider_id, links)
