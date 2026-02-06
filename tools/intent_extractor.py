@@ -179,23 +179,27 @@ def _extract_with_rules(prompt: str) -> Dict[str, Any]:
     if any(kw in prompt_lower for kw in SCHOOL_KEYWORDS):
         target_settings.append("SCHOOL")
     
-    # Extract residential preference
+    # Extract residential preference - check exclude first to catch negations
     residential = "any"
-    for kw in RESIDENTIAL_KEYWORDS["must"]:
+    
+    # Check exclusion first (to catch "not residential", "no residential", etc.)
+    for kw in RESIDENTIAL_KEYWORDS["exclude"]:
         if kw in prompt_lower:
-            residential = "must"
+            residential = "exclude"
             break
     
+    # Only check "must" if not already excluded
+    if residential == "any":
+        for kw in RESIDENTIAL_KEYWORDS["must"]:
+            if kw in prompt_lower:
+                residential = "must"
+                break
+    
+    # Check "prefer" last
     if residential == "any":
         for kw in RESIDENTIAL_KEYWORDS["prefer"]:
             if kw in prompt_lower:
                 residential = "prefer"
-                break
-    
-    if residential == "any":
-        for kw in RESIDENTIAL_KEYWORDS["exclude"]:
-            if kw in prompt_lower:
-                residential = "exclude"
                 break
     
     # Extract vocational areas
