@@ -242,7 +242,7 @@ def _extract_with_keywords(prompt: str) -> ExtractedIntent:
     
     # Detect residential preference
     residential = ResidentialPreference.ANY
-    if re.search(r'\b(only residential|must be residential|residential only|need residential)\b', prompt_lower):
+    if re.search(r'\b(only residential|must be residential|residential only|need.{0,5}residential|needs.{0,5}residential)\b', prompt_lower):
         residential = ResidentialPreference.MUST
     elif re.search(r'\b(residential college|residential provider|prefer residential|want residential)\b', prompt_lower):
         residential = ResidentialPreference.PREFER

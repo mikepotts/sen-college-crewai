@@ -1,7 +1,12 @@
 
 import re
-HOSPITALITY_KEYWORDS=[r"hospitality",r"catering",r"professional cookery",r"kitchen",r"chef",r"restaurant",r"barista",r"food"]
-SEND_KEYWORDS=[r"ehcp",r"ehc plan",r"send",r"inclusive learning",r"foundation learning",r"high needs",r"additional learning support",r"reasonable adjustments",r"autism",r"adhd",r"quiet",r"sensory"]
+from typing import Dict, Any, List, Optional
+
+# Import will be done inside function to avoid circular imports
+# from tools.intent_model import ExtractedIntent, ResidentialPreference, VOCATIONAL_TAXONOMY
+
+HOSPITALITY_KEYWORDS=[r"hospitality",r"catering",r"professional cookery",r"kitchen",r"chef",r"restaurant",r"barista",r"food"]
+SEND_KEYWORDS=[r"ehcp",r"ehc plan",r"send",r"inclusive learning",r"foundation learning",r"high needs",r"additional learning support",r"reasonable adjustments",r"autism",r"adhd",r"quiet",r"sensory"]
 
 def keyword_hits(text: str, patterns) -> int:
     if not text: return 0
@@ -27,7 +32,7 @@ def intent_based_score(
     provider: Dict[str, Any],
     distance_miles: float,
     radius_miles: float,
-    intent: Optional[ExtractedIntent],
+    intent: Optional[Any],  # ExtractedIntent or None
     cfg
 ) -> tuple[float, Dict[str, float], List[str]]:
     """
@@ -43,7 +48,6 @@ def intent_based_score(
     Returns:
         Tuple of (score, breakdown_dict, match_reasons_list)
     """
-    from typing import Dict, Any, List, Optional
     from tools.intent_model import ExtractedIntent, ResidentialPreference, VOCATIONAL_TAXONOMY
     
     match_reasons = []
