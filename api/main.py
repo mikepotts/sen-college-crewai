@@ -35,8 +35,30 @@ DEFAULT_WHY_IT_MATCHES = [
 
 
 app = FastAPI(title="SEN College Finder API", version="0.1.0")
-origins=["http://localhost:5173","http://127.0.0.1:5173"]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# CORS configuration - allow common development ports
+# In production, set CORS_ORIGINS environment variable to specific origins
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    # Default development origins (localhost on various ports)
+    origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=origins, 
+    allow_credentials=True, 
+    allow_methods=["*"], 
+    allow_headers=["*"]
+)
 
 
 @app.middleware("http")
