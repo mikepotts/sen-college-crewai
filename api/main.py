@@ -1,12 +1,14 @@
 import logging
 logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH =PROJECT_ROOT / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
-print("degub USSER POSTCODE ",os.getenv("USER_POSTCODE"))
+logger.debug(f"User postcode from env: {os.getenv('USER_POSTCODE')}")
 from fastapi import FastAPI, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -100,17 +102,9 @@ def instant(
     # NEW: GenAI prompt-based search
     prompt: Optional[str] = Query(None, description="Natural language description of child needs, diagnoses, and aspirations"),
 ):
-    print("DEBUG /instant params:", {
-    "postcode": postcode,
-    "radius_miles": radius_miles,
-    "start_radius_miles": start_radius_miles,
-    "expand_step_miles": expand_step_miles,
-    "max_radius_miles": max_radius_miles,
-    "residential_mode": residential_mode,
-    "national_for_residential": national_for_residential,
-    "target_count": target_count,
-    "prompt": prompt[:MAX_PROMPT_LOG_LENGTH] if prompt else None
-    })
+    logger.debug(f"/instant params: postcode={postcode}, radius_miles={radius_miles}, "
+                f"residential_mode={residential_mode}, target_count={target_count}, "
+                f"prompt={prompt[:MAX_PROMPT_LOG_LENGTH] if prompt else None}")
     """
     DB-backed /instant:
 
@@ -128,13 +122,13 @@ def instant(
     if prompt:
         from tools.intent_extractor import extract_intent
         extracted_intent = extract_intent(prompt)
-        print("DEBUG: Extracted intent:", extracted_intent)
+        logger.debug(f"Extracted intent: {extracted_intent}")
         
         # Also extract profile for backward compatibility with existing scoring
         from tools.profile_extractor import extract_profile_from_prompt
         extracted_profile = extract_profile_from_prompt(prompt)
         if extracted_profile:
-            print("DEBUG: Extracted profile:", extracted_profile)
+            logger.debug(f"Extracted profile: {extracted_profile}")
     
     # ----- 1) set up config / scoring
     cfg = RunConfig()
@@ -167,13 +161,13 @@ def instant(
         from tools.provider_classifier import should_include_provider
         target_settings = extracted_intent.get("target_settings", ["FE_COLLEGE", "TRAINING_PROVIDER"])
         local_pool = [r for r in local_pool if should_include_provider(r, target_settings)]
-        print(f"DEBUG: Filtered to {len(local_pool)} providers matching target settings: {target_settings}")
+        logger.debug(f"Filtered to {len(local_pool)} providers matching target settings: {target_settings}")
     else:
         # Default filtering: exclude schools by default
         from tools.provider_classifier import should_include_provider
         default_target = ["FE_COLLEGE", "TRAINING_PROVIDER"]
         local_pool = [r for r in local_pool if should_include_provider(r, default_target)]
-        print(f"DEBUG: Filtered to {len(local_pool)} providers (excluding schools by default)")
+        logger.debug(f"Filtered to {len(local_pool)} providers (excluding schools by default)")
 
     # ----- 3) compute distances & select local candidates under radius
     def with_distance(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -189,7 +183,7 @@ def instant(
         from tools.intent_matching import filter_providers_by_residential
         residential_pref = extracted_intent.get("residential", "any")
         local_pool = filter_providers_by_residential(local_pool, residential_pref)
-        print(f"DEBUG: After residential filtering ({residential_pref}): {len(local_pool)} providers")
+        logger.debug(f"After residential filtering ({residential_pref}): {len(local_pool)} providers")
 
     # Filter to non-residential for local_non_residential bucket (the UI's "instant_dossiers")
     non_res = [r for r in local_pool if not r.get("is_residential")]

@@ -180,24 +180,29 @@ def _extract_with_rules(prompt: str) -> Dict[str, Any]:
         target_settings.append("SCHOOL")
     
     # Extract residential preference - check exclude first to catch negations
+    # Use word boundaries to avoid false matches like "exclusively" matching "exclude"
     residential = "any"
     
     # Check exclusion first (to catch "not residential", "no residential", etc.)
     for kw in RESIDENTIAL_KEYWORDS["exclude"]:
-        if kw in prompt_lower:
+        # Use word boundary regex for more accurate matching
+        pattern = r'\b' + re.escape(kw) + r'\b'
+        if re.search(pattern, prompt_lower):
             residential = "exclude"
             break
     
     # Only check "must" if not already excluded
     if residential == "any":
         for kw in RESIDENTIAL_KEYWORDS["must"]:
-            if kw in prompt_lower:
+            pattern = r'\b' + re.escape(kw) + r'\b'
+            if re.search(pattern, prompt_lower):
                 residential = "must"
                 break
     
     # Check "prefer" last
     if residential == "any":
         for kw in RESIDENTIAL_KEYWORDS["prefer"]:
+            # Prefer keywords are phrases, so just use substring matching
             if kw in prompt_lower:
                 residential = "prefer"
                 break

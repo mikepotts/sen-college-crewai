@@ -32,9 +32,13 @@ def score_provider_with_intent(
     final_score = base_score
     match_reasons = []
     
-    # Distance-based reason
-    if distance_miles is not None:
-        match_reasons.append(f"Located {distance_miles:.1f} miles from your location")
+    # Distance-based reason (only if within reasonable range)
+    MAX_REASONABLE_DISTANCE = 200  # miles
+    if distance_miles is not None and distance_miles <= MAX_REASONABLE_DISTANCE:
+        if distance_miles < 10:
+            match_reasons.append(f"Located nearby ({distance_miles:.1f} miles)")
+        else:
+            match_reasons.append(f"Located {distance_miles:.1f} miles from your location")
     
     # Residential matching
     residential_boost = _score_residential_match(provider, intent, match_reasons)
@@ -130,12 +134,13 @@ def _score_send_match(
         boost += 0.2
     
     # If we have specific SEND needs, add general support message
+    MAX_DISPLAYED_SEND_NEEDS = 3  # Limit displayed needs for readability
     if send_needs and (provider.get("is_specialist") or provider.get("s41_approved")):
-        needs_text = ", ".join(send_needs[:3])
+        needs_text = ", ".join(send_needs[:MAX_DISPLAYED_SEND_NEEDS])
         match_reasons.append(f"Support available for: {needs_text}")
     elif send_needs:
         # Provider might still have SEND support even if not specialist
-        needs_text = ", ".join(send_needs[:2])
+        needs_text = ", ".join(send_needs[:2])  # Show fewer for non-specialist
         match_reasons.append(f"May offer support for: {needs_text}")
         boost += 0.05  # Small boost for having SEND needs that could be matched
     

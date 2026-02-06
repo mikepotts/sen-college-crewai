@@ -129,10 +129,11 @@ def should_include_provider(provider_row: Dict[str, Any], target_settings: list)
     if "FE_COLLEGE" in target_settings and provider_type == "SIXTH_FORM_COLLEGE":
         return True
     
-    # Special case: if type is UNKNOWN, be inclusive (could be a valid provider)
+    # Special case: if type is UNKNOWN, be inclusive unless it's clearly not wanted
+    # UNKNOWN providers could be valid FE/training providers that we couldn't classify
     if provider_type == "UNKNOWN":
-        # Only exclude if SCHOOL is explicitly NOT in target settings
-        return "SCHOOL" not in target_settings or len(target_settings) > 1
+        # Only exclude if we're specifically looking for schools only
+        return "SCHOOL" in target_settings if target_settings == ["SCHOOL"] else True
     
     return False
 
