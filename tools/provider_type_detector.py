@@ -12,12 +12,13 @@ from tools.intent_model import TargetSetting
 
 
 # Patterns to detect FE colleges
+# Note: Sixth form colleges are technically FE institutions, but we also have a separate
+# SIXTH_FORM category. The SIXTH_FORM detection (more specific) takes precedence.
 FE_COLLEGE_PATTERNS = [
     r'\bcollege\b',
     r'\bfe college\b',
     r'\bfurther education\b',
     r'\bgeneral fe\b',
-    r'\bsixth form college\b',  # Sixth form colleges are often FE
     r'\bcommunity college\b',
 ]
 
@@ -60,6 +61,13 @@ def infer_provider_type(provider: Dict[str, Any]) -> str:
     """
     Infer provider type from provider data.
     
+    Detection order (most specific first):
+    1. Sixth form (specific check before general college check)
+    2. School (excluding false positives)
+    3. FE college (general college pattern)
+    4. Training provider
+    5. Fallback to S41/specialist flags
+    
     Args:
         provider: Dictionary with provider data (must have 'name' field)
         
@@ -73,16 +81,15 @@ def infer_provider_type(provider: Dict[str, Any]) -> str:
     if explicit_type and explicit_type.strip():
         return normalize_provider_type(explicit_type)
     
-    # Infer from name
+    # Infer from name - check most specific patterns first
     
-    # Check for schools first (but exclude false positives)
+    # Check for sixth form specifically (before general college check)
+    if any(re.search(pattern, name) for pattern in SIXTH_FORM_PATTERNS):
+        return "SIXTH_FORM"
+    
+    # Check for schools (but exclude false positives)
     is_school_exception = any(re.search(pattern, name) for pattern in SCHOOL_EXCEPTIONS)
     if not is_school_exception:
-        # Check for sixth form specifically
-        if any(re.search(pattern, name) for pattern in SIXTH_FORM_PATTERNS):
-            return "SIXTH_FORM"
-        
-        # Then check for regular schools
         if any(re.search(pattern, name) for pattern in SCHOOL_PATTERNS):
             return "SCHOOL"
     

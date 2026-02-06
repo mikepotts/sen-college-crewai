@@ -199,7 +199,8 @@ def instant(
 
     # Filter to non-residential for local_non_residential bucket (the UI's "instant_dossiers")
     # But respect intent-based residential preference
-    if extracted_intent and extracted_intent.residential.value == "must":
+    from tools.intent_model import ResidentialPreference
+    if extracted_intent and extracted_intent.residential == ResidentialPreference.MUST:
         # If residential is MUST, only show residential providers
         non_res = [r for r in local_pool if r.get("is_residential")]
     else:
