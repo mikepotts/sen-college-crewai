@@ -17,13 +17,13 @@ def fetch_nearby_providers(lat: float, lon: float, include_residential: bool, ma
     c = conn.cursor()
     # Pull a reasonable tranche (e.g. 5k rows) to compute precise distances in code
     # You can refine: fetch all ENG or by rough lat/lon window.
-    sql = "SELECT provider_id, name, postcode, lat, lon, is_residential, s41_approved, website FROM providers WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    sql = "SELECT provider_id, name, postcode, lat, lon, is_residential, is_specialist, s41_approved, provider_type, website FROM providers WHERE lat IS NOT NULL AND lon IS NOT NULL"
     if not include_residential:
         sql += " AND (is_residential=0 OR is_residential IS NULL)"
     rows = c.execute(sql).fetchall()
     conn.close()
 
-    cols = ["provider_id","name","postcode","lat","lon","is_residential","s41_approved","website"]
+    cols = ["provider_id","name","postcode","lat","lon","is_residential","is_specialist","s41_approved","provider_type","website"]
     out = [dict(zip(cols,r)) for r in rows]
     return out
 
@@ -32,9 +32,9 @@ def fetch_by_ids(ids: List[str]) -> Dict[str,Dict[str,Any]]:
     conn = get_conn()
     c = conn.cursor()
     qmarks = ",".join(["?"]*len(ids))
-    rows = c.execute(f"SELECT provider_id,name,postcode,lat,lon,is_residential,s41_approved,website FROM providers WHERE provider_id IN ({qmarks})", ids).fetchall()
+    rows = c.execute(f"SELECT provider_id,name,postcode,lat,lon,is_residential,is_specialist,s41_approved,provider_type,website FROM providers WHERE provider_id IN ({qmarks})", ids).fetchall()
     conn.close()
-    cols = ["provider_id","name","postcode","lat","lon","is_residential","s41_approved","website"]
+    cols = ["provider_id","name","postcode","lat","lon","is_residential","is_specialist","s41_approved","provider_type","website"]
     return {r[0]: dict(zip(cols,r)) for r in rows}
 
 def fetch_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
@@ -50,7 +50,7 @@ def fetch_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
     conn = get_conn()
     c = conn.cursor()
     row = c.execute(
-        "SELECT provider_id, name, postcode, lat, lon, is_residential, s41_approved, website "
+        "SELECT provider_id, name, postcode, lat, lon, is_residential, is_specialist, s41_approved, provider_type, website "
         "FROM providers WHERE provider_id = ?",
         (provider_id,)
     ).fetchone()
@@ -59,5 +59,5 @@ def fetch_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
     if not row:
         return None
     
-    cols = ["provider_id", "name", "postcode", "lat", "lon", "is_residential", "s41_approved", "website"]
+    cols = ["provider_id", "name", "postcode", "lat", "lon", "is_residential", "is_specialist", "s41_approved", "provider_type", "website"]
     return dict(zip(cols, row))
