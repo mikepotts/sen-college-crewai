@@ -1,12 +1,14 @@
 import logging
 logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH =PROJECT_ROOT / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
-print("degub USSER POSTCODE ",os.getenv("USER_POSTCODE"))
+logger.debug(f"User postcode from env: {os.getenv('USER_POSTCODE')}")
 from fastapi import FastAPI, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -100,17 +102,9 @@ def instant(
     # NEW: GenAI prompt-based search
     prompt: Optional[str] = Query(None, description="Natural language description of child needs, diagnoses, and aspirations"),
 ):
-    print("DEBUG /instant params:", {
-    "postcode": postcode,
-    "radius_miles": radius_miles,
-    "start_radius_miles": start_radius_miles,
-    "expand_step_miles": expand_step_miles,
-    "max_radius_miles": max_radius_miles,
-    "residential_mode": residential_mode,
-    "national_for_residential": national_for_residential,
-    "target_count": target_count,
-    "prompt": prompt[:MAX_PROMPT_LOG_LENGTH] if prompt else None
-    })
+    logger.debug(f"/instant params: postcode={postcode}, radius_miles={radius_miles}, "
+                f"residential_mode={residential_mode}, target_count={target_count}, "
+                f"prompt={prompt[:MAX_PROMPT_LOG_LENGTH] if prompt else None}")
     """
     DB-backed /instant:
 
@@ -122,13 +116,19 @@ def instant(
       (i.e., not restricted by the local radius), ranked primarily by distance (if available) + placeholder scores.
     - prompt: optional natural language description for GenAI-enhanced search
     """
-    # ----- 0) Extract profile from prompt if provided
-    extracted_profile = None
+    # ----- 0) Extract intent from prompt if provided (NEW: intent-based matching)
+    extracted_intent = None
+    extracted_profile = None  # Keep for backward compatibility
     if prompt:
+        from tools.intent_extractor import extract_intent
+        extracted_intent = extract_intent(prompt)
+        logger.debug(f"Extracted intent: {extracted_intent}")
+        
+        # Also extract profile for backward compatibility with existing scoring
         from tools.profile_extractor import extract_profile_from_prompt
         extracted_profile = extract_profile_from_prompt(prompt)
         if extracted_profile:
-            print("DEBUG: Extracted profile:", extracted_profile)
+            logger.debug(f"Extracted profile: {extracted_profile}")
     
     # ----- 1) set up config / scoring
     cfg = RunConfig()
@@ -155,6 +155,19 @@ def instant(
 
     # Ensure records have lat/lon
     local_pool = [r for r in local_pool if isinstance(r.get("lat"), (int,float)) and isinstance(r.get("lon"), (int,float))]
+    
+    # ----- 2a) NEW: Filter by provider type based on intent
+    if extracted_intent:
+        from tools.provider_classifier import should_include_provider
+        target_settings = extracted_intent.get("target_settings", ["FE_COLLEGE", "TRAINING_PROVIDER"])
+        local_pool = [r for r in local_pool if should_include_provider(r, target_settings)]
+        logger.debug(f"Filtered to {len(local_pool)} providers matching target settings: {target_settings}")
+    else:
+        # Default filtering: exclude schools by default
+        from tools.provider_classifier import should_include_provider
+        default_target = ["FE_COLLEGE", "TRAINING_PROVIDER"]
+        local_pool = [r for r in local_pool if should_include_provider(r, default_target)]
+        logger.debug(f"Filtered to {len(local_pool)} providers (excluding schools by default)")
 
     # ----- 3) compute distances & select local candidates under radius
     def with_distance(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,6 +177,13 @@ def instant(
         return r2
 
     local_pool = [with_distance(r) for r in local_pool]
+    
+    # ----- 3a) NEW: Apply residential filtering based on intent
+    if extracted_intent:
+        from tools.intent_matching import filter_providers_by_residential
+        residential_pref = extracted_intent.get("residential", "any")
+        local_pool = filter_providers_by_residential(local_pool, residential_pref)
+        logger.debug(f"After residential filtering ({residential_pref}): {len(local_pool)} providers")
 
     # Filter to non-residential for local_non_residential bucket (the UI's "instant_dossiers")
     non_res = [r for r in local_pool if not r.get("is_residential")]
@@ -179,8 +199,7 @@ def instant(
                 break
             used_radius += expand_step_miles
 
-    # ----- 4) scoring (simple: keywords are not available yet for DB rows, use placeholders)
-    # We can improve when you add tags/notes; for now, aspiration/SEND hits = 0 (or you can infer from name/type).
+    # ----- 4) scoring with intent-based enhancements
     # If profile was extracted from prompt, use it to enhance scoring
     def score_row(r: Dict[str, Any]) -> Dict[str, Any]:
         # Build text from available fields for keyword matching
@@ -199,8 +218,18 @@ def instant(
         score, d_comp, a_comp, s_comp = blended_score(
             r["distance_miles"], max(used_radius, 0.01), a_hits, s_hits, cfg.scoring
         )
+        
+        # NEW: Apply intent-based scoring and generate match reasons
+        match_reasons = []
+        if extracted_intent:
+            from tools.intent_matching import score_provider_with_intent
+            score, match_reasons = score_provider_with_intent(
+                r, extracted_intent, score, r["distance_miles"], used_radius
+            )
+        
         r2 = dict(r)
         r2["score"] = round(score, 4)
+        r2["match_reasons"] = match_reasons  # NEW: Store match reasons for later use
         r2["score_breakdown"] = {
             "distance_component": round(d_comp, 4),
             "aspiration_component": round(a_comp, 4),
@@ -225,6 +254,17 @@ def instant(
             # Pull a big pool (include_residential=True), then filter to residential in code
             res_pool = fetch_nearby_providers(user_lat, user_lon, include_residential=True, max_distance_miles=9999)
             res_pool = [r for r in res_pool if r.get("is_residential") and isinstance(r.get("lat"), (int,float)) and isinstance(r.get("lon"), (int,float))]
+            
+            # NEW: Apply same provider type filtering to residential providers
+            if extracted_intent:
+                from tools.provider_classifier import should_include_provider
+                target_settings = extracted_intent.get("target_settings", ["FE_COLLEGE", "TRAINING_PROVIDER"])
+                res_pool = [r for r in res_pool if should_include_provider(r, target_settings)]
+            else:
+                from tools.provider_classifier import should_include_provider
+                default_target = ["FE_COLLEGE", "TRAINING_PROVIDER"]
+                res_pool = [r for r in res_pool if should_include_provider(r, default_target)]
+            
             res_pool = [with_distance(r) for r in res_pool]
             # You can score similarly (distance light-weight in nat. context)
             residential_scored = [score_row(r) for r in res_pool]
@@ -262,11 +302,13 @@ def instant(
         else:
             badges.insert(0, "Residential")
         
-        # Generate profile-based quick_summary and why_it_matches if profile exists
+        # NEW: Use intent-based match_reasons if available, otherwise fall back to profile-based or defaults
         quick_summary = ""
-        why_it_matches = list(DEFAULT_WHY_IT_MATCHES)  # Copy default messages
-        
-        if extracted_profile:
+        if row.get("match_reasons"):
+            # Intent-based matching was used
+            why_it_matches = row["match_reasons"]
+        elif extracted_profile:
+            # Legacy profile-based matching
             # Generate a personalized summary
             profile_parts = []
             if extracted_profile.get("aspirations"):
@@ -292,6 +334,9 @@ def instant(
             
             if row.get("s41_approved"):
                 why_it_matches.append("Section 41 approved for SEND provision")
+        else:
+            # Default fallback messages
+            why_it_matches = list(DEFAULT_WHY_IT_MATCHES)
 
         return {
             "provider": {
@@ -327,7 +372,8 @@ def instant(
             "residential_mode": residential_mode,
             "national_for_residential": national_for_residential,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "extracted_profile": extracted_profile if extracted_profile else None  # Include for transparency
+            "extracted_profile": extracted_profile if extracted_profile else None,  # Include for transparency
+            "extracted_intent": extracted_intent if extracted_intent else None  # NEW: Include intent for debugging
         },
         "local_non_residential": {
             "user_postcode": user_pc,
