@@ -35,8 +35,30 @@ DEFAULT_WHY_IT_MATCHES = [
 
 
 app = FastAPI(title="SEN College Finder API", version="0.1.0")
-origins=["http://localhost:5173","http://127.0.0.1:5173"]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# CORS configuration - allow common development ports
+# In production, set CORS_ORIGINS environment variable to specific origins
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    # Default development origins (localhost on various ports)
+    origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=origins, 
+    allow_credentials=True, 
+    allow_methods=["*"], 
+    allow_headers=["*"]
+)
 
 
 @app.middleware("http")
@@ -120,15 +142,15 @@ def instant(
     - residential_mode: 'exclude' | 'include' | 'only'
     - national_for_residential: when True and residential_mode != 'exclude', returns residential providers nationally
       (i.e., not restricted by the local radius), ranked primarily by distance (if available) + placeholder scores.
-    - prompt: optional natural language description for GenAI-enhanced search
+    - prompt: optional natural language description for GenAI-enhanced search with intent extraction
     """
-    # ----- 0) Extract profile from prompt if provided
-    extracted_profile = None
+    # ----- 0) Extract intent from prompt if provided
+    extracted_intent = None
     if prompt:
-        from tools.profile_extractor import extract_profile_from_prompt
-        extracted_profile = extract_profile_from_prompt(prompt)
-        if extracted_profile:
-            print("DEBUG: Extracted profile:", extracted_profile)
+        from tools.intent_extractor import extract_intent_from_prompt
+        extracted_intent = extract_intent_from_prompt(prompt)
+        if extracted_intent:
+            print("DEBUG: Extracted intent:", extracted_intent.model_dump())
     
     # ----- 1) set up config / scoring
     cfg = RunConfig()
@@ -165,8 +187,25 @@ def instant(
 
     local_pool = [with_distance(r) for r in local_pool]
 
+    # ----- 3.5) Filter by provider type based on intent
+    if extracted_intent:
+        from tools.provider_type_detector import matches_target_settings
+        # Filter providers by target settings (excludes schools by default)
+        local_pool = [r for r in local_pool if matches_target_settings(r, extracted_intent.target_settings)]
+    else:
+        # Default behavior: exclude schools unless explicitly targeting them
+        from tools.provider_type_detector import infer_provider_type
+        local_pool = [r for r in local_pool if infer_provider_type(r) != "SCHOOL"]
+
     # Filter to non-residential for local_non_residential bucket (the UI's "instant_dossiers")
-    non_res = [r for r in local_pool if not r.get("is_residential")]
+    # But respect intent-based residential preference
+    from tools.intent_model import ResidentialPreference
+    if extracted_intent and extracted_intent.residential == ResidentialPreference.MUST:
+        # If residential is MUST, only show residential providers
+        non_res = [r for r in local_pool if r.get("is_residential")]
+    else:
+        # Standard behavior: show non-residential for local results
+        non_res = [r for r in local_pool if not r.get("is_residential")]
     # If fixed-radius provided, use it; else expand until we reach target_count or max
     if radius_miles is not None:
         used_radius = radius_miles
@@ -179,38 +218,28 @@ def instant(
                 break
             used_radius += expand_step_miles
 
-    # ----- 4) scoring (simple: keywords are not available yet for DB rows, use placeholders)
-    # We can improve when you add tags/notes; for now, aspiration/SEND hits = 0 (or you can infer from name/type).
-    # If profile was extracted from prompt, use it to enhance scoring
+    # ----- 4) scoring with intent-based enhancements
     def score_row(r: Dict[str, Any]) -> Dict[str, Any]:
-        # Build text from available fields for keyword matching
-        text_parts = [r.get("name", ""), r.get("provider_type", "")]
-        text = " ".join(filter(None, text_parts))
+        from tools.scoring import intent_based_score
         
-        # Use extracted profile for enhanced scoring if available
-        if extracted_profile and extracted_profile.get("keywords"):
-            from tools.profile_extractor import enhance_scoring_with_profile
-            a_hits, s_hits = enhance_scoring_with_profile(extracted_profile, text)
-        else:
-            # Fallback to default keyword matching (currently minimal)
-            a_hits = keyword_hits(text, HOSPITALITY_KEYWORDS)
-            s_hits = keyword_hits(text, SEND_KEYWORDS)
-        
-        score, d_comp, a_comp, s_comp = blended_score(
-            r["distance_miles"], max(used_radius, 0.01), a_hits, s_hits, cfg.scoring
+        # Use intent-based scoring
+        score, breakdown, match_reasons = intent_based_score(
+            provider=r,
+            distance_miles=r["distance_miles"],
+            radius_miles=max(used_radius, 0.01),
+            intent=extracted_intent,
+            cfg=cfg.scoring
         )
+        
         r2 = dict(r)
         r2["score"] = round(score, 4)
-        r2["score_breakdown"] = {
-            "distance_component": round(d_comp, 4),
-            "aspiration_component": round(a_comp, 4),
-            "sendfit_component": round(s_comp, 4),
-            "weights": {
-                "distance": cfg.scoring.w_distance,
-                "aspiration": cfg.scoring.w_aspiration,
-                "sendfit": cfg.scoring.w_send_fit
-            }
+        r2["score_breakdown"] = breakdown
+        r2["score_breakdown"]["weights"] = {
+            "distance": cfg.scoring.w_distance,
+            "aspiration": cfg.scoring.w_aspiration,
+            "sendfit": cfg.scoring.w_send_fit
         }
+        r2["match_reasons"] = match_reasons
         return r2
 
     local_scored = [score_row(r) for r in local_within]
@@ -262,36 +291,23 @@ def instant(
         else:
             badges.insert(0, "Residential")
         
-        # Generate profile-based quick_summary and why_it_matches if profile exists
+        # Use match_reasons from scoring if available, otherwise generate legacy ones
         quick_summary = ""
-        why_it_matches = list(DEFAULT_WHY_IT_MATCHES)  # Copy default messages
+        why_it_matches = row.get("match_reasons", list(DEFAULT_WHY_IT_MATCHES))
         
-        if extracted_profile:
-            # Generate a personalized summary
-            profile_parts = []
-            if extracted_profile.get("aspirations"):
-                profile_parts.append(f"Interests: {', '.join(extracted_profile['aspirations'][:3])}")
-            if extracted_profile.get("diagnoses"):
-                profile_parts.append(f"Support for: {', '.join(extracted_profile['diagnoses'][:2])}")
-            if profile_parts:
-                quick_summary = f"{row['name']} - {' | '.join(profile_parts)}"
+        # Generate intent-based quick_summary if intent exists
+        if extracted_intent:
+            summary_parts = [row['name']]
             
-            # Generate personalized matching reasons
-            why_it_matches = []
-            if row.get("distance_miles"):
-                why_it_matches.append(f"Located {row['distance_miles']} miles from your postcode")
+            if extracted_intent.vocational_areas:
+                voc_areas = [v.replace("_", " ").title() for v in extracted_intent.vocational_areas[:2]]
+                summary_parts.append(f"Vocational: {', '.join(voc_areas)}")
             
-            # Add aspiration matches
-            if extracted_profile.get("aspirations"):
-                asp_text = ", ".join(extracted_profile["aspirations"][:2])
-                why_it_matches.append(f"May offer courses related to: {asp_text}")
+            if extracted_intent.send_needs:
+                needs = [n.replace("_", " ").title() for n in extracted_intent.send_needs[:2]]
+                summary_parts.append(f"SEND Support: {', '.join(needs)}")
             
-            # Add SEND support match
-            if extracted_profile.get("needs") or extracted_profile.get("diagnoses"):
-                why_it_matches.append("Provider has SEND support capabilities")
-            
-            if row.get("s41_approved"):
-                why_it_matches.append("Section 41 approved for SEND provision")
+            quick_summary = " | ".join(summary_parts)
 
         return {
             "provider": {
@@ -327,7 +343,7 @@ def instant(
             "residential_mode": residential_mode,
             "national_for_residential": national_for_residential,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "extracted_profile": extracted_profile if extracted_profile else None  # Include for transparency
+            "extracted_intent": extracted_intent.model_dump() if extracted_intent else None  # Include for transparency
         },
         "local_non_residential": {
             "user_postcode": user_pc,
